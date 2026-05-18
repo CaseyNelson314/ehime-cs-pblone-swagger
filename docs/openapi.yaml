@@ -9,10 +9,13 @@ info:
     - HTTPSなし
     - 認証はPHPセッション
     - パスパラメータ的なIDはクエリパラメータで表現
+    - 全エンドポイントで、操作対象リソースの所有者チェックを行うこと
+    - 他人のリソースへのアクセスは403で拒否(404にしない)
+    - bookshelf_id等の参照IDも、所有者であることを必ず確認すること
   version: 1.0.0
 servers:
 - url: https://virtserver.swaggerhub.com/ehime/book-store/1.0.0
-  description: SwaggerHub API Auto Mocking
+  description: SwaggerHub API Auto Mock Server
 security:
 - sessionAuth: []
 tags:
@@ -170,11 +173,11 @@ paths:
       summary: 本棚一覧
       responses:
         "200":
-          description: id指定時は本棚オブジェクト、省略時は配列
+          description: 本棚オブジェクト
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/inline_response_200"
+                $ref: "#/components/schemas/Bookshelves"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -256,29 +259,21 @@ paths:
     get:
       tags:
       - book
-      summary: 本一覧 or 本詳細
-      description: |
-        - id 指定: 単一の本の詳細
-        - bookshelf_id 指定: その本棚内の本一覧
-        - 両方省略: 自分の全ての本(本棚横断)
+      summary: 本
+      description: 単一の本の詳細
       parameters:
       - name: id
         in: query
-        required: false
-        schema:
-          type: integer
-      - name: bookshelf_id
-        in: query
-        required: false
+        required: true
         schema:
           type: integer
       responses:
         "200":
-          description: id指定時は本オブジェクト、それ以外は配列
+          description: 本オブジェクト
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/inline_response_200_1"
+                $ref: "#/components/schemas/Book"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -446,7 +441,6 @@ components:
           type: string
           writeOnly: true
         new_password:
-          minLength: 8
           type: string
           writeOnly: true
     SortMethod:
@@ -555,18 +549,6 @@ components:
           type: integer
         review:
           type: string
-    inline_response_200:
-      oneOf:
-      - $ref: "#/components/schemas/Bookshelves"
-      - type: array
-        items:
-          $ref: "#/components/schemas/Bookshelves"
-    inline_response_200_1:
-      oneOf:
-      - $ref: "#/components/schemas/Book"
-      - type: array
-        items:
-          $ref: "#/components/schemas/Book"
   responses:
     Unauthorized:
       description: 認証されていない (セッションなし or 期限切れ)

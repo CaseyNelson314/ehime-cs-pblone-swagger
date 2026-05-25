@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: 読書管理アプリ API
   description: |
-    読書管理アプリのREST API仕様書
+    読書管理アプリのAPI仕様書
 
     実装方針:
     - PHPファイル単位でリソースを管理(CGIしばりなので)
@@ -20,13 +20,13 @@ security:
 - sessionAuth: []
 tags:
 - name: auth
-  description: 認証 (api/auth/*.php)
+  description: 認証
 - name: user
-  description: ユーザー (api/user.php)
+  description: ユーザー
 - name: bookshelf
-  description: 本棚 (api/bookshelf.php)
+  description: 本棚
 - name: book
-  description: 本 (api/book.php)
+  description: 本
 paths:
   /auth/register.php:
     post:
@@ -86,7 +86,23 @@ paths:
     post:
       tags:
       - auth
-      summary: ログアウト (セッション破棄)
+      summary: ログアウト
+      responses:
+        "204":
+          description: 成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /auth/password.php:
+    post:
+      tags:
+      - auth
+      summary: パスワードリセット
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordChange"
+        required: true
       responses:
         "204":
           description: 成功
@@ -104,43 +120,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/User"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-    post:
-      tags:
-      - user
-      summary: パスワード変更 (action=password)
-      description: |
-        action クエリパラメータでサブ操作を識別する。
-        PHPファイル単位の制約により、特殊操作はaction指定で表現する。
-      parameters:
-      - name: action
-        in: query
-        required: true
-        schema:
-          type: string
-          enum:
-          - password
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PasswordChange"
-        required: true
-      responses:
-        "204":
-          description: 変更完了
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "422":
-          $ref: "#/components/responses/ValidationError"
-    delete:
-      tags:
-      - user
-      summary: アカウント削除 (本棚・本もカスケード削除)
-      responses:
-        "204":
-          description: 削除完了
         "401":
           $ref: "#/components/responses/Unauthorized"
     patch:
@@ -166,6 +145,15 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+      - user
+      summary: アカウント削除 (本棚・本もカスケード削除)
+      responses:
+        "204":
+          description: 削除完了
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /bookshelf.php:
     get:
       tags:
@@ -205,25 +193,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "422":
           $ref: "#/components/responses/ValidationError"
-    delete:
-      tags:
-      - bookshelf
-      summary: 本棚を削除 (中の本もカスケード削除)
-      parameters:
-      - name: id
-        in: query
-        required: true
-        schema:
-          type: integer
-      responses:
-        "204":
-          description: 削除成功
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-        "404":
-          $ref: "#/components/responses/NotFound"
     patch:
       tags:
       - bookshelf
@@ -255,12 +224,10 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
-  /book.php:
-    get:
+    delete:
       tags:
-      - book
-      summary: 本
-      description: 単一の本の詳細
+      - bookshelf
+      summary: 本棚を削除 (中の本もカスケード削除)
       parameters:
       - name: id
         in: query
@@ -268,12 +235,34 @@ paths:
         schema:
           type: integer
       responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /books.php:
+    get:
+      tags:
+      - book
+      summary: 本一覧 (本棚内)
+      description: |
+        指定された本棚内の本を一覧取得する。
+      parameters:
+      - name: bookshelf_id
+        in: query
+        required: true
+        schema:
+          type: integer
+      responses:
         "200":
-          description: 本オブジェクト
+          description: 本の配列
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Book"
+                $ref: "#/components/schemas/Books"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -284,6 +273,8 @@ paths:
       tags:
       - book
       summary: 本を追加
+      description: |
+        本棚に本を追加する。
       requestBody:
         content:
           application/json:
@@ -305,10 +296,12 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
-    delete:
+  /book.php:
+    get:
       tags:
       - book
-      summary: 本を削除
+      summary: 本
+      description: 単一の本の詳細
       parameters:
       - name: id
         in: query
@@ -316,8 +309,12 @@ paths:
         schema:
           type: integer
       responses:
-        "204":
-          description: 削除成功
+        "200":
+          description: 本オブジェクト
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -355,6 +352,25 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+      - book
+      summary: 本を削除
+      parameters:
+      - name: id
+        in: query
+        required: true
+        schema:
+          type: integer
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 components:
   schemas:
     Error:
@@ -443,12 +459,6 @@ components:
         new_password:
           type: string
           writeOnly: true
-    SortMethod:
-      type: string
-      enum:
-      - date
-      - kana
-      - author
     Bookshelf:
       type: object
       properties:
@@ -460,8 +470,6 @@ components:
           readOnly: true
         name:
           type: string
-        sort_method:
-          $ref: "#/components/schemas/SortMethod"
         book_count:
           type: integer
           readOnly: true
@@ -478,15 +486,11 @@ components:
           maxLength: 100
           minLength: 1
           type: string
-        sort_method:
-          $ref: "#/components/schemas/SortMethod"
     BookshelfUpdate:
       type: object
       properties:
         name:
           type: string
-        sort_method:
-          $ref: "#/components/schemas/SortMethod"
     BookStatus:
       type: string
       enum:
@@ -519,6 +523,10 @@ components:
           type: string
           format: date-time
           readOnly: true
+    Books:
+      type: array
+      items:
+        $ref: "#/components/schemas/Book"
     BookCreate:
       required:
       - bookshelf_id
@@ -551,7 +559,7 @@ components:
           type: string
   responses:
     Unauthorized:
-      description: 認証されていない (セッションなし or 期限切れ)
+      description: 未認証 (セッションなし or 期限切れ)
       content:
         application/json:
           schema:

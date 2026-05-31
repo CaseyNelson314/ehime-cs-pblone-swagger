@@ -13,6 +13,33 @@ info:
     0. 他人のリソースへのアクセスは404で拒否する (存在を隠すため)
     0. フロントエンドは外部の書籍APIサービスを呼び出さない設計（APIキーの隠蔽、取得結果のキャッシュ、リクエスト回数の制御目的）
 
+    フロントがAPIを呼び出す例を示します。
+
+    ```js
+    // 例: 本棚に本を追加する場合
+    const response = await fetch("/api/books.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        bookshelf_id: 1,         // 追加先の本棚ID
+        isbn: "9784873119045",   // 追加する本のISBN
+        status: "unread",
+        pages_read: 0,
+        review: ""
+      })
+    });
+    if (response.ok) {
+      const newBook = await response.json();
+      console.log("本が追加されました", newBook);
+    } else {
+      const error = await response.json();
+      console.error("エラーが発生しました", error);
+    }
+    ```
+    上記の例では、ユーザーが本棚ID 1にISBN 9784873119045の本を追加しようとしています。リクエストが成功すれば、追加された本の情報がレスポンスとして返されます。エラーが発生した場合は、エラーメッセージが返されます。
+
   version: 1.0.0
 servers:
   - url: https://virtserver.swaggerhub.com/ehime/book-store/1.0.0
@@ -24,6 +51,8 @@ tags:
     description: 認証
   - name: user
     description: ユーザー
+  - name: bookshelf
+    description: 本棚
   - name: book
     description: 本
 paths:
@@ -149,14 +178,97 @@ paths:
         - user
       summary: アカウント削除
       description: |
-        本も全て削除される。
+        本棚や本も全て削除される。
       responses:
         "204":
           description: 削除完了
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/bookshelf.php:
+    get:
+      tags:
+        - bookshelf
+      summary: 本棚一覧
+      responses:
+        "200":
+          description: 本棚オブジェクト
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bookshelves"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - bookshelf
+      summary: 本棚を作成
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookshelfCreate"
+        required: true
+      responses:
+        "201":
+          description: 作成成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bookshelf"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - bookshelf
+      summary: 本棚を更新
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookshelfUpdate"
+        required: true
+      responses:
+        "200":
+          description: 更新後の本棚
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bookshelf"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - bookshelf
+      summary: 本棚を削除
+      description: |
+        指定された本棚を削除する。中の本も削除される。
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: 削除成功
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
-  /api/search.php:
+  /api/books-global.php:
     get:
       tags:
         - book
@@ -171,6 +283,8 @@ paths:
         3. ユーザーが候補の中から正しい本を選択
         4. 選択された本のISBNを使って /books.php に本の追加リクエストを送る
 
+        一覧表示に使用する書影ファイルはサーバーが持つが、当エンドポイント呼び出しで得られる書影URLは Google Books APIなどの外部サービスのものを返す。一時的な表示であり、サーバーにキャッシュする意味がないため。
+
       parameters:
         - name: title
           in: query
@@ -179,27 +293,36 @@ paths:
             type: string
       responses:
         "200":
-          description: |
-            本の配列 
-          
-            当エンドポイント呼び出しで得られる書影URLは Google Books APIなどの外部サービスのものを返す。検索結果は一時的な表示であり、サーバーにキャッシュする意味がないため。
-
+          description: 本の配列
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Books"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "502":
-          $ref: "#/components/responses/BadGateway"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/books.php:
     get:
       tags:
         - book
-      summary: ユーザーの持つ本一覧を取得
+      summary: 本の一覧を取得
       description: |
-        book.php のレスポンスの配列と同義
+        指定された本棚内の本を一覧取得する。
+
+        本棚一覧を表示する場合、フロントは次のような手順を踏む。
+        1. /bookshelf.php からユーザーの本棚一覧を取得
+        2. 各本棚に対して当エンドポイントにリクエストを送る
+        3. 各本棚内の本の一覧を取得し、ユーザーに表示する
+
+        なお、当エンドポイントのレスポンスには各本の詳細情報（タイトル、著者、書影URLなど）も含まれるため、フロントエンドは /books-global.php を呼び出す必要はない。
+      parameters:
+        - name: bookshelf_id
+          in: query
+          required: true
+          schema:
+            type: integer
       responses:
         "200":
           description: 本の配列
@@ -209,12 +332,14 @@ paths:
                 $ref: "#/components/schemas/UserBooks"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "502":
-          $ref: "#/components/responses/BadGateway"
+        "404":
+          $ref: "#/components/responses/NotFound"
     post:
       tags:
         - book
-      summary: 本を登録
+      summary: 本を追加
+      description: |
+        本棚に本を追加する。
       requestBody:
         content:
           application/json:
@@ -242,7 +367,6 @@ paths:
       parameters:
         - name: id
           in: query
-          description: 本のID
           required: true
           schema:
             type: integer
@@ -263,7 +387,6 @@ paths:
       summary: 本の情報更新
       parameters:
         - name: id
-          description: 本のID
           in: query
           required: true
           schema:
@@ -293,7 +416,6 @@ paths:
       summary: 本を削除
       parameters:
         - name: id
-          description: 本のID
           in: query
           required: true
           schema:
@@ -393,6 +515,36 @@ components:
           type: string
           minLength: 8
           writeOnly: true
+    Bookshelf:
+      type: object
+      properties:
+        id:
+          type: integer
+          readOnly: true
+        user_id:
+          type: integer
+          readOnly: true
+        name:
+          type: string
+        book_count:
+          type: integer
+          readOnly: true
+    Bookshelves:
+      type: array
+      items:
+        $ref: "#/components/schemas/Bookshelf"
+    BookshelfCreate:
+      required:
+        - name
+      type: object
+      properties:
+        name:
+          type: string
+    BookshelfUpdate:
+      type: object
+      properties:
+        name:
+          type: string
     BookStatus:
       type: string
       enum:
@@ -407,6 +559,8 @@ components:
         id:
           type: integer
           readOnly: true
+        bookshelf_id:
+          type: integer
         details:
           $ref: "#/components/schemas/Book"
         status:
@@ -450,9 +604,12 @@ components:
 
     BookCreate:
       required:
+        - bookshelf_id
         - isbn
       type: object
       properties:
+        bookshelf_id:
+          type: integer
         isbn:
           type: string
         status:
@@ -465,6 +622,8 @@ components:
     BookUpdate:
       type: object
       properties:
+        bookshelf_id:
+          type: integer
         status:
           $ref: "#/components/schemas/BookStatus"
         reading_time_seconds:
@@ -482,13 +641,6 @@ components:
             $ref: "#/components/schemas/Error"
     NotFound:
       description: リソースが存在しない
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-    BadGateway:
-      description: |
-        外部の書籍APIサービスが応答しない、または利用制限に達した場合。
       content:
         application/json:
           schema:
